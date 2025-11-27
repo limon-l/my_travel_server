@@ -4,6 +4,8 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
+const PORT = process.env.PORT || 5000;
+
 const app = express();
 app.use(
   cors({
@@ -565,5 +567,6 @@ app.get("/api/seed", async (req, res) => {
   await Tour.insertMany(tours);
   res.json({ message: "Seeded 30 Packages Successfully" });
 });
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 module.exports = app;
