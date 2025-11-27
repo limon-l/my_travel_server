@@ -96,6 +96,11 @@ app.post("/api/login", async (req, res) => {
 app.post("/api/register", async (req, res) => {
   const { name, email, password, hometown, dob } = req.body;
   try {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: "Email already exists" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
       name,
@@ -105,9 +110,10 @@ app.post("/api/register", async (req, res) => {
       dob,
     });
     await newUser.save();
-    res.status(201).json({ message: "User registered" });
+    res.status(201).json({ message: "User registered successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Email already exists" });
+    console.error("Register Error:", error);
+    res.status(500).json({ error: "Registration failed on server" });
   }
 });
 
