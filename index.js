@@ -5,13 +5,26 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const app = express();
-app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "https://my-travel-client-c663.vercel.app",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log("DB Error:", err));
+app.use(express.json());
+
+if (mongoose.connection.readyState === 0) {
+  mongoose
+    .connect(process.env.MONGO_URI)
+    .then(() => console.log("MongoDB Connected"))
+    .catch((err) => console.log("DB Error:", err));
+}
 
 const UserSchema = new mongoose.Schema({
   name: String,
@@ -21,7 +34,7 @@ const UserSchema = new mongoose.Schema({
   hometown: String,
   dob: String,
 });
-const User = mongoose.model("User", UserSchema);
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
 
 const TourSchema = new mongoose.Schema({
   title: String,
@@ -33,10 +46,10 @@ const TourSchema = new mongoose.Schema({
   image: String,
   location: String,
 });
-const Tour = mongoose.model("Tour", TourSchema);
+const Tour = mongoose.models.Tour || mongoose.model("Tour", TourSchema);
 
 const BookingSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  user: { type: String, ref: "User" },
   tour: { type: mongoose.Schema.Types.ObjectId, ref: "Tour" },
   tourTitle: String,
   tourImage: String,
@@ -44,8 +57,10 @@ const BookingSchema = new mongoose.Schema({
   endDate: Date,
   totalPrice: Number,
   status: { type: String, default: "Confirmed" },
+  createdAt: { type: Date, default: Date.now },
 });
-const Booking = mongoose.model("Booking", BookingSchema);
+const Booking =
+  mongoose.models.Booking || mongoose.model("Booking", BookingSchema);
 
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
@@ -95,8 +110,12 @@ app.post("/api/register", async (req, res) => {
 });
 
 app.get("/api/tours", async (req, res) => {
-  const tours = await Tour.find();
-  res.json(tours);
+  try {
+    const tours = await Tour.find();
+    res.json(tours);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch tours" });
+  }
 });
 
 app.get("/api/tours/:id", async (req, res) => {
@@ -183,6 +202,30 @@ app.get("/api/bookings/:userId", async (req, res) => {
 app.delete("/api/bookings/:id", async (req, res) => {
   await Booking.findByIdAndDelete(req.params.id);
   res.json({ message: "Booking cancelled" });
+});
+
+app.get("/api/users/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+app.put("/api/users/:id", async (req, res) => {
+  const { name, hometown, dob } = req.body;
+  try {
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { name, hometown, dob },
+      { new: true }
+    ).select("-password");
+    res.json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update profile" });
+  }
 });
 
 app.get("/api/seed", async (req, res) => {
@@ -293,7 +336,7 @@ app.get("/api/seed", async (req, res) => {
       duration: 5,
       priority: "Standard",
       image:
-        "https://media2.thrillophilia.com/images/photos/000/124/492/original/1527232809_shutterstock_705430021.jpg?width=975&height=600",
+        "https://media2.thrillophilia.com/images/photos/000/124/492/original/1527232809_shutterstock_705430021_jpg?width=975&height=600",
       shortDesc: "Luxury amidst sand dunes.",
       fullDesc: "Burj Khalifa and desert camping...",
     },
@@ -523,29 +566,4 @@ app.get("/api/seed", async (req, res) => {
   res.json({ message: "Seeded 30 Packages Successfully" });
 });
 
-app.get("/api/users/:id", async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id).select("-password");
-    if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch user" });
-  }
-});
-
-app.put("/api/users/:id", async (req, res) => {
-  const { name, hometown, dob } = req.body;
-  try {
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      { name, hometown, dob },
-      { new: true }
-    ).select("-password");
-    res.json(updatedUser);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-const PORT = 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+module.exports = app;

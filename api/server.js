@@ -5,10 +5,12 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const app = express();
-
 app.use(
   cors({
-    origin: "*",
+    origin: [
+      "http://localhost:3000",
+      "https://my-travel-client-c663.vercel.app",
+    ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -47,7 +49,7 @@ const TourSchema = new mongoose.Schema({
 const Tour = mongoose.models.Tour || mongoose.model("Tour", TourSchema);
 
 const BookingSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  user: { type: String, ref: "User" },
   tour: { type: mongoose.Schema.Types.ObjectId, ref: "Tour" },
   tourTitle: String,
   tourImage: String,
@@ -202,8 +204,6 @@ app.delete("/api/bookings/:id", async (req, res) => {
   res.json({ message: "Booking cancelled" });
 });
 
-// --- USER PROFILE ROUTES ---
-
 app.get("/api/users/:id", async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select("-password");
@@ -336,7 +336,7 @@ app.get("/api/seed", async (req, res) => {
       duration: 5,
       priority: "Standard",
       image:
-        "https://media2.thrillophilia.com/images/photos/000/124/492/original/1527232809_shutterstock_705430021.jpg?width=975&height=600",
+        "https://media2.thrillophilia.com/images/photos/000/124/492/original/1527232809_shutterstock_705430021_jpg?width=975&height=600",
       shortDesc: "Luxury amidst sand dunes.",
       fullDesc: "Burj Khalifa and desert camping...",
     },
