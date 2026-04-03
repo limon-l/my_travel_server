@@ -5,21 +5,25 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const PORT = process.env.PORT || 5000;
+const CLIENT_ORIGINS = process.env.CLIENT_ORIGIN
+  ? process.env.CLIENT_ORIGIN.split(",").map((origin) => origin.trim())
+  : ["http://localhost:3000", "https://my-travel-client-c663.vercel.app"];
 
 const app = express();
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://my-travel-client-c663.vercel.app",
-    ],
+    origin: CLIENT_ORIGINS,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.json({ status: "ok", service: "my_travel_server" });
+});
 
 if (mongoose.connection.readyState === 0) {
   mongoose
@@ -228,7 +232,7 @@ app.put("/api/users/:id", async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { name, hometown, dob },
-      { new: true }
+      { new: true },
     ).select("-password");
     res.json(updatedUser);
   } catch (error) {
