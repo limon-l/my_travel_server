@@ -5,19 +5,40 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const PORT = process.env.PORT || 5000;
+
+// Define allowed origins - prioritize environment variable, fall back to defaults
+const DEFAULT_ORIGINS = [
+  "http://localhost:3000",
+  "https://my-travel-client.vercel.app",
+];
+
 const CLIENT_ORIGINS = process.env.CLIENT_ORIGIN
   ? process.env.CLIENT_ORIGIN.split(",").map((origin) => origin.trim())
-  : ["http://localhost:3000", "https://my-travel-client-c663.vercel.app"];
+  : DEFAULT_ORIGINS;
+
+console.log("Allowed CORS Origins:", CLIENT_ORIGINS);
 
 const app = express();
-app.use(
-  cors({
-    origin: CLIENT_ORIGINS,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  }),
-);
+
+// CORS Configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    if (CLIENT_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked request from origin: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
