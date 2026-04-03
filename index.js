@@ -72,18 +72,27 @@ const TourSchema = new mongoose.Schema({
   priority: String,
   image: String,
   location: String,
+  availableDates: { type: [String], default: [] },
 });
 const Tour = mongoose.models.Tour || mongoose.model("Tour", TourSchema);
 
 const BookingSchema = new mongoose.Schema({
   user: { type: String, ref: "User" },
+  userName: String,
+  userEmail: String,
   tour: { type: mongoose.Schema.Types.ObjectId, ref: "Tour" },
   tourTitle: String,
   tourImage: String,
   startDate: Date,
   endDate: Date,
   totalPrice: Number,
-  status: { type: String, default: "Confirmed" },
+  status: {
+    type: String,
+    enum: ["Pending", "Confirmed", "Rejected"],
+    default: "Pending",
+  },
+  statusUpdatedAt: { type: Date, default: Date.now },
+  statusNote: String,
   createdAt: { type: Date, default: Date.now },
 });
 const Booking =
@@ -179,14 +188,123 @@ app.delete("/api/tours/:id", async (req, res) => {
   }
 });
 
+app.get("/api/tours/:id/available-dates", async (req, res) => {
+  try {
+    const tour = await Tour.findById(req.params.id).select("availableDates");
+    if (!tour) {
+      return res.status(404).json({ error: "Tour not found" });
+    }
+
+    const occupiedBookings = await Booking.find({
+      tour: req.params.id,
+      status: { $in: ["Pending", "Confirmed"] },
+    }).select("startDate");
+
+    const occupiedDates = new Set(
+      occupiedBookings.map(
+        (booking) => new Date(booking.startDate).toISOString().split("T")[0],
+      ),
+    );
+
+    const freeDates = (tour.availableDates || []).filter(
+      (date) => !occupiedDates.has(date),
+    );
+
+    res.json({ availableDates: freeDates });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch available dates" });
+  }
+});
+
+app.put("/api/tours/:id/available-dates", async (req, res) => {
+  const { availableDates } = req.body;
+  try {
+    if (!Array.isArray(availableDates)) {
+      return res.status(400).json({ error: "availableDates must be an array" });
+    }
+
+    const normalized = [];
+    for (const rawDate of availableDates.filter(Boolean)) {
+      const parsed = new Date(rawDate);
+      if (Number.isNaN(parsed.getTime())) {
+        return res
+          .status(400)
+          .json({ error: `Invalid date format: ${rawDate}` });
+      }
+      normalized.push(parsed.toISOString().split("T")[0]);
+    }
+
+    const uniqueSortedDates = [...new Set(normalized)].sort();
+
+    const tour = await Tour.findByIdAndUpdate(
+      req.params.id,
+      { availableDates: uniqueSortedDates },
+      { new: true },
+    );
+
+    if (!tour) {
+      return res.status(404).json({ error: "Tour not found" });
+    }
+
+    res.json({
+      message: "Available dates updated",
+      availableDates: uniqueSortedDates,
+    });
+  } catch (e) {
+    res.status(500).json({
+      error: "Failed to update available dates",
+      detail: e?.message || "Unknown server error",
+    });
+  }
+});
+
 app.post("/api/bookings", async (req, res) => {
   const { userId, tourId, startDate, duration, price, tourTitle, tourImage } =
     req.body;
 
   try {
+    const userDoc = await User.findById(userId).select("name email");
+
+    const tour = await Tour.findById(tourId);
+    if (!tour) {
+      return res.status(404).json({ error: "Tour not found" });
+    }
+
+    const normalizedDate = new Date(startDate).toISOString().split("T")[0];
+    const availableDates = tour.availableDates || [];
+
+    if (availableDates.length === 0) {
+      return res.status(400).json({
+        error:
+          "No available date has been published by admin for this tour yet.",
+      });
+    }
+
+    if (!availableDates.includes(normalizedDate)) {
+      return res.status(400).json({
+        error:
+          "Selected date is not available. Please choose an available date.",
+      });
+    }
+
     const start = new Date(startDate);
     const end = new Date(start);
     end.setDate(start.getDate() + parseInt(duration));
+
+    const dayStart = new Date(`${normalizedDate}T00:00:00.000Z`);
+    const dayEnd = new Date(`${normalizedDate}T23:59:59.999Z`);
+
+    const occupiedDate = await Booking.findOne({
+      tour: tourId,
+      startDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ["Pending", "Confirmed"] },
+    });
+
+    if (occupiedDate) {
+      return res.status(409).json({
+        error: "This date is already requested/booked by another traveler.",
+      });
+    }
 
     const overlap = await Booking.findOne({
       user: userId,
@@ -205,16 +323,21 @@ app.post("/api/bookings", async (req, res) => {
 
     const newBooking = new Booking({
       user: userId,
+      userName: userDoc?.name || "Traveler",
+      userEmail: userDoc?.email || "",
       tour: tourId,
       tourTitle,
       tourImage,
       startDate: start,
       endDate: end,
       totalPrice: price,
+      status: "Pending",
+      statusUpdatedAt: new Date(),
+      statusNote: "Awaiting admin approval",
     });
 
     await newBooking.save();
-    res.json({ message: "Booking confirmed!" });
+    res.json({ message: "Booking request sent. Waiting for admin approval." });
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Booking failed" });
@@ -223,12 +346,80 @@ app.post("/api/bookings", async (req, res) => {
 
 app.get("/api/bookings/:userId", async (req, res) => {
   try {
-    const bookings = await Booking.find({ user: req.params.userId }).sort({
-      startDate: 1,
-    });
+    const bookings = await Booking.find({ user: req.params.userId })
+      .populate("tour", "_id title")
+      .sort({
+        startDate: 1,
+      });
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ error: "Fetch failed" });
+  }
+});
+
+app.get("/api/admin/bookings", async (req, res) => {
+  try {
+    const bookings = await Booking.find().sort({
+      status: 1,
+      createdAt: -1,
+    });
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch booking requests" });
+  }
+});
+
+app.put("/api/admin/bookings/:id/status", async (req, res) => {
+  const { status, note } = req.body;
+
+  if (!["Confirmed", "Rejected"].includes(status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    if (status === "Confirmed") {
+      const dayStart = new Date(
+        `${new Date(booking.startDate).toISOString().split("T")[0]}T00:00:00.000Z`,
+      );
+      const dayEnd = new Date(
+        `${new Date(booking.startDate).toISOString().split("T")[0]}T23:59:59.999Z`,
+      );
+
+      const conflict = await Booking.findOne({
+        _id: { $ne: booking._id },
+        tour: booking.tour,
+        startDate: { $gte: dayStart, $lte: dayEnd },
+        status: "Confirmed",
+      });
+
+      if (conflict) {
+        return res.status(409).json({
+          error: "Another traveler is already confirmed for this date.",
+        });
+      }
+    }
+
+    booking.status = status;
+    booking.statusUpdatedAt = new Date();
+    booking.statusNote =
+      note ||
+      (status === "Confirmed"
+        ? "Your booking has been approved by admin"
+        : "Your booking has been declined by admin");
+
+    await booking.save();
+
+    res.json({
+      message: `Booking ${status.toLowerCase()} successfully`,
+      booking,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update booking status" });
   }
 });
 
