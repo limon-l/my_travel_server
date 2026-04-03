@@ -74,6 +74,8 @@ const TourSchema = new mongoose.Schema({
   location: String,
   availableDates: { type: [String], default: [] },
 });
+TourSchema.index({ priority: 1 });
+TourSchema.index({ location: 1 });
 const Tour = mongoose.models.Tour || mongoose.model("Tour", TourSchema);
 
 const BookingSchema = new mongoose.Schema({
@@ -95,6 +97,8 @@ const BookingSchema = new mongoose.Schema({
   statusNote: String,
   createdAt: { type: Date, default: Date.now },
 });
+BookingSchema.index({ user: 1, startDate: 1 });
+BookingSchema.index({ tour: 1, startDate: 1, status: 1 });
 const Booking =
   mongoose.models.Booking || mongoose.model("Booking", BookingSchema);
 
@@ -153,7 +157,7 @@ app.post("/api/register", async (req, res) => {
 
 app.get("/api/tours", async (req, res) => {
   try {
-    const tours = await Tour.find();
+    const tours = await Tour.find().lean();
     res.json(tours);
   } catch (e) {
     res.status(500).json({ error: "Failed to fetch tours" });
@@ -162,7 +166,7 @@ app.get("/api/tours", async (req, res) => {
 
 app.get("/api/tours/:id", async (req, res) => {
   try {
-    const tour = await Tour.findById(req.params.id);
+    const tour = await Tour.findById(req.params.id).lean();
     res.json(tour);
   } catch (e) {
     res.status(404).json({ error: "Tour not found" });
@@ -190,7 +194,9 @@ app.delete("/api/tours/:id", async (req, res) => {
 
 app.get("/api/tours/:id/available-dates", async (req, res) => {
   try {
-    const tour = await Tour.findById(req.params.id).select("availableDates");
+    const tour = await Tour.findById(req.params.id)
+      .select("availableDates")
+      .lean();
     if (!tour) {
       return res.status(404).json({ error: "Tour not found" });
     }
@@ -348,6 +354,7 @@ app.get("/api/bookings/:userId", async (req, res) => {
   try {
     const bookings = await Booking.find({ user: req.params.userId })
       .populate("tour", "_id title")
+      .lean()
       .sort({
         startDate: 1,
       });
@@ -359,10 +366,12 @@ app.get("/api/bookings/:userId", async (req, res) => {
 
 app.get("/api/admin/bookings", async (req, res) => {
   try {
-    const bookings = await Booking.find().sort({
-      status: 1,
-      createdAt: -1,
-    });
+    const bookings = await Booking.find()
+      .sort({
+        status: 1,
+        createdAt: -1,
+      })
+      .lean();
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch booking requests" });
