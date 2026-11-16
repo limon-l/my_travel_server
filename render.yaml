@@ -5,7 +5,7 @@ services:
     plan: free
     buildCommand: npm ci
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
@@ -13,4 +13,10 @@ services:
       - key: MONGO_URI
         sync: false
       - key: CLIENT_ORIGIN
+        sync: false
+      - key: API_SESSION_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
         sync: false
